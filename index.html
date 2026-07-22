@@ -96,13 +96,13 @@
         if (!input) return null;
         input = input.trim();
 
-        // 1. Direct testen op decimale coördinaten (bijv: 50.913940, 3.382690) - DIT FIXT DE GPS-KNOP!
+        // 1. Directe check voor decimale coördinaten (GPS knop of handmatig ingevoerd)
         const decimaalMatch = input.match(/(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/);
         if (decimaalMatch) {
             return { lat: parseFloat(decimaalMatch[1]), lon: parseFloat(decimaalMatch[2]) };
         }
 
-        // 2. Direct testen op DMS (Graden/Minuten/Seconden: 50°54'48.5"N 3°16'52.8"E)
+        // 2. Graden/Minuten/Seconden (DMS)
         const dmsRegex = /(\d+)°(\d+)'([\d.]+)"?([NS])[\s,]+(\d+)°(\d+)'([\d.]+)"?([EW])/i;
         const dmsMatch = input.match(dmsRegex);
         if (dmsMatch) {
@@ -115,7 +115,7 @@
             return { lat: lat, lon: lon };
         }
 
-        // 3. Als het een volledige URL is met coördinaten erin (@lat,lon)
+        // 3. Volledige URL met @lat,lon
         const urlMatch = input.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || 
                          input.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/) ||
                          input.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
@@ -124,20 +124,20 @@
             return { lat: parseFloat(urlMatch[1]), lon: parseFloat(urlMatch[2]) };
         }
 
-        // 4. Pas als het een KORTE link is (maps.app.goo.gl) halen we de echte URL op
+        // 4. Korte Google Maps link
         if (input.includes('maps.app.goo.gl') || input.includes('goo.gl')) {
             try {
-                const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(input)}`;
+                const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(input)}`;
                 const res = await fetch(proxyUrl);
-                const finalUrl = res.url;
+                const data = await res.json();
                 
-                const match = finalUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || 
-                              finalUrl.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
+                const match = data.contents.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || 
+                              data.contents.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
                 if (match) {
                     return { lat: parseFloat(match[1]), lon: parseFloat(match[2]) };
                 }
             } catch (e) {
-                console.error("Fout bij uitpakken van korte link:", e);
+                console.error("Fout bij uitpakken link:", e);
             }
         }
 
@@ -186,6 +186,32 @@
         }
     }
 
+    // Slimme fetch die automatisch overschakelt op reserve-proxy
+    async function haalEurisDataOp(myLat, myLon) {
+        const eurisUrl = `https://www.eurisportal.eu/api/v1/vessels?latitude=${myLat}&longitude=${myLon}&radius=10000`;
+        
+        // Primaire optie: Thingproxy (zeer stabiel met headers)
+        try {
+            const resp = await fetch(`https://thingproxy.freeboard.io/fetch/${eurisUrl}`, {
+                headers: { 'Authorization': `Bearer ${API_KEY}` }
+            });
+            if (resp.ok) return await resp.json();
+        } catch (e) {
+            console.warn("Primaire proxy mislukt, we proberen de reserve...");
+        }
+
+        // Reserve-optie: Corsproxy
+        const resp2 = await fetch(`https://corsproxy.io/?${encodeURIComponent(eurisUrl)}`, {
+            headers: { 'Authorization': `Bearer ${API_KEY}` }
+        });
+        
+        const contentType = resp2.headers.get("content-type");
+        if (!resp2.ok || (contentType && !contentType.includes("json"))) {
+            throw new Error("API-proxy overbelast. Probeer zo dadelijk opnieuw.");
+        }
+        return await resp2.json();
+    }
+
     async function voerControleUit() {
         const rawInput = document.getElementById('coords').value;
         const statusBox = document.getElementById('statusBox');
@@ -207,22 +233,8 @@
 
         statusBox.innerText = `[${tijd}] Bezig met ophalen EuRIS data...\nLocatie: ${myLat.toFixed(4)}, ${myLon.toFixed(4)}`;
 
-        const targetUrl = `https://corsproxy.io/?${encodeURIComponent(`https://www.eurisportal.eu/api/v1/vessels?latitude=${myLat}&longitude=${myLon}&radius=10000`)}`;
-
         try {
-            const response = await fetch(targetUrl, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${API_KEY}`,
-                    'Accept': 'application/json'
-                }
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-
-            const data = await response.json();
+            const data = await haalEurisDataOp(myLat, myLon);
             const schepen = data.vessels || data.items || (Array.isArray(data) ? data : []);
 
             let bootGevonden = false;
