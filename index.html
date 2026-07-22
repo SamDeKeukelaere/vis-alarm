@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visstek Boot Alarm</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #f0f4f8;
+            color: #102a43;
+            padding: 20px;
+            margin: 0;
+        }
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            max-width: 400px;
+            margin: 0 auto 20px auto;
+        }
+        h2, h3 { margin-top: 0; color: #0b69a3; }
+        label { font-weight: bold; display: block; margin-top: 10px; }
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            margin-top: 5px;
+            border: 1px solid #bcccdc;
+            border-radius: 6px;
+            box-sizing: border-box;
+            font-size: 14px;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            margin-top: 15px;
+            border: none;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        .btn-gps { background-color: #486581; color: white; }
+        .btn-start { background-color: #27ab83; color: white; }
+        .btn-stop { background-color: #e12d39; color: white; display: none; }
+        .btn-test { background-color: #d9e2ec; color: #102a43; }
+        .status {
+            padding: 12px;
+            border-radius: 6px;
+            background: #f0f4f8;
+            margin-top: 15px;
+            font-size: 14px;
+            line-height: 1.4;
+            white-space: pre-line;
+        }
+        .alert-active {
+            background-color: #ffe3e3;
+            color: #b71919;
+            border: 1px solid #e12d39;
+        }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>🎣 Visstek Boot Alarm</h2>
+    
+    <label for="coords">Google Maps Coördinaten:</label>
+    <input type="text" id="coords" placeholder="Plak hier bijv: 50°54'48.5&quot;N 3°16'52.8&quot;E">
+
+    <button class="btn-gps" onclick="haalGPSOp()">📍 Gebruik Mijn GPS Locatie</button>
+
+    <hr style="margin-top:20px; border: 0.5px solid #d9e2ec;">
+
+    <button id="startBtn" class="btn-start" onclick="startCheck()">▶ START CONTROLE (Elke 5 min)</button>
+    <button id="stopBtn" class="btn-stop" onclick="stopCheck()">⏹ STOP CONTROLE</button>
+
+    <div class="status" id="statusBox">
+        <strong>Status:</strong> Wacht op start...
+    </div>
+</div>
+
+<div class="card">
+    <h3>🔊 Geluid Testen</h3>
+    <button class="btn-test" onclick="speelAlarmGeluid()">🔔 Test Alarm Geluid</button>
+</div>
+
+<script>
+    const API_KEY = "eyJhbGciOiJSUzI1NiIsImtpZCI6IjdBMEZGQTU5QkZFM0Y1MDk4MzhEMUQyNjAyRjdBMkNBRUU4OUQyQ0EiLCJ0eXAiOiJKV1QifQ.eyJqdGkiOiIzZTcyMTg2Mi05MzUyLTRkNjEtOTVmNC1hMzI3YzljNmVjZDkiLCJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9lbWFpbGFkZHJlc3MiOiJzYW0uZGUua2V1a2VsYWVyZUBob3RtYWlsLmNvbSIsImh0dHA6Ly9zY2hlbWFzLm1pY3Jvc29mdC5jb20vd3MvMjAwOC8wNi9pZGVudGl0eS9jbGFpbXMvcm9sZSI6IlBlcnNvbmFsQWNjZXNzVG9rZW5Sb2xlIiwiZXhwIjoxODE2MjA3MjAwLCJpc3MiOiJodHRwczovL3d3dy5ldXJpc3BvcnRhbC5ldSIsImF1ZCI6IlBlcnNvbmFsQWNjZXNzVG9rZW4ifQ.FhPLCykASjRr9neKgMgdw1oZauRICpjgvYqlLv9GQsIj7CiLsmtKr90SGUXuuZnNE5n834NSpozaieApwUSBl72VRC8KUFB8lj2Vd2j3vg7y_N_R7NYpDVMPiBr6Q16xEp3kGp34mDWMPetvrhtNjm7JuM92rGFyFWq4FAz8EYuofslsGY5VJLjaRubKci_0-b1ZfEAYtQ2iZv-Ek8I8nW8WdusDB2dTSxC2RgzOH6GQ7omBUVYMeMoUyrPk2jPQv-Ta5y5hQRq8wx6iHIXvED2zVSgIH5uI7XeYB1uBh-VpUS_iburDUIzYG4WKwBQa-OcCFQW6uLf432nSnFeURQ";
+    
+    let checkInterval = null;
+
+    function parseCoordinaten(input) {
+        if (!input) return null;
+        
+        const decimaalMatch = input.match(/(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/);
+        if (decimaalMatch) {
+            return { lat: parseFloat(decimaalMatch[1]), lon: parseFloat(decimaalMatch[2]) };
+        }
+
+        const dmsRegex = /(\d+)°(\d+)'([\d.]+)"?([NS])[\s,]+(\d+)°(\d+)'([\d.]+)"?([EW])/i;
+        const dmsMatch = input.match(dmsRegex);
+        
+        if (dmsMatch) {
+            let lat = parseInt(dmsMatch[1]) + parseInt(dmsMatch[2])/60 + parseFloat(dmsMatch[3])/3600;
+            if (dmsMatch[4].toUpperCase() === 'S') lat = -lat;
+
+            let lon = parseInt(dmsMatch[5]) + parseInt(dmsMatch[6])/60 + parseFloat(dmsMatch[7])/3600;
+            if (dmsMatch[8].toUpperCase() === 'W') lon = -lon;
+
+            return { lat: lat, lon: lon };
+        }
+
+        return null;
+    }
+
+    function haalGPSOp() {
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(position => {
+                const lat = position.coords.latitude.toFixed(6);
+                const lon = position.coords.longitude.toFixed(6);
+                document.getElementById('coords').value = `${lat}, ${lon}`;
+                document.getElementById('statusBox').innerText = "Status: GPS coördinaten ingevuld!";
+            }, error => {
+                alert("Kon GPS niet ophalen.");
+            });
+        } else {
+            alert("GPS niet ondersteund.");
+        }
+    }
+
+    function berekenAfstandKm(lat1, lon1, lat2, lon2) {
+        const R = 6371;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                  Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                  Math.sin(dLon/2) * Math.sin(dLon/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        return R * c;
+    }
+
+    function speelAlarmGeluid() {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        for (let i = 0; i < 8; i++) {
+            let osc = audioCtx.createOscillator();
+            let gain = audioCtx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(900, audioCtx.currentTime + (i * 0.3));
+            gain.gain.setValueAtTime(1, audioCtx.currentTime + (i * 0.3));
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + (i * 0.3) + 0.25);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(audioCtx.currentTime + (i * 0.3));
+            osc.stop(audioCtx.currentTime + (i * 0.3) + 0.25);
+        }
+    }
+
+    async function voerControleUit() {
+        const rawInput = document.getElementById('coords').value;
+        const parsed = parseCoordinaten(rawInput);
+        const statusBox = document.getElementById('statusBox');
+
+        if (!parsed) {
+            alert("Ongeldige coördinaten!");
+            stopCheck();
+            return;
+        }
+
+        const myLat = parsed.lat;
+        const myLon = parsed.lon;
+        const tijd = new Date().toLocaleTimeString();
+
+        statusBox.className = "status";
+        statusBox.innerText = `[${tijd}] Bezig met ophalen EuRIS data...\nLocatie: ${myLat.toFixed(4)}, ${myLon.toFixed(4)}`;
+
+        // CORS proxy toevoegen voor lokale bestanden
+        const targetUrl = `https://www.eurisportal.eu/api/v1/vessels?latitude=${myLat}&longitude=${myLon}&radius=10000`;
+        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+
+        try {
+            const response = await fetch(proxyUrl, {
+                headers: {
+                    'Authorization': `Bearer ${API_KEY}`,
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`API foutmelding: ${response.status}`);
+            }
+
+            const data = await response.json();
+            const schepen = data.vessels || data.items || data || [];
+
+            let bootGevonden = false;
+            let gevondenBoodschap = "";
+
+            for (let ship of schepen) {
+                const shipLat = ship.latitude || (ship.position ? ship.position.latitude : null);
+                const shipLon = ship.longitude || (ship.position ? ship.position.longitude : null);
+                const snelheid = ship.speed || 0;
+                const naam = ship.name || "Onbekend Schip";
+
+                if (shipLat && shipLon) {
+                    const afstand = berekenAfstandKm(myLat, myLon, shipLat, shipLon);
+
+                    if (afstand <= 6.0 && snelheid > 0.5) {
+                        bootGevonden = true;
+                        gevondenBoodschap += `🚨 BOOT NABIJ: ${naam}\nAfstand: ${afstand.toFixed(2)} km | Snelheid: ${snelheid} km/h\n\n`;
+                    }
+                }
+            }
+
+            if (bootGevonden) {
+                statusBox.className = "status alert-active";
+                statusBox.innerText = `[${tijd}] ALARM!\n\n${gevondenBoodschap}`;
+                speelAlarmGeluid();
+            } else {
+                statusBox.innerText = `[${tijd}] Laatste check OK.\nGeen varende schepen binnen 6 km.`;
+            }
+
+        } catch (error) {
+            console.error(error);
+            statusBox.innerText = `[${tijd}] Fout bij ophalen data.\n${error.message}`;
+        }
+    }
+
+    function startCheck() {
+        const rawInput = document.getElementById('coords').value;
+        if (!rawInput) {
+            alert("Plak eerst coördinaten!");
+            return;
+        }
+
+        voerControleUit();
+        checkInterval = setInterval(voerControleUit, 300000);
+
+        document.getElementById('startBtn').style.display = 'none';
+        document.getElementById('stopBtn').style.display = 'block';
+    }
+
+    function stopCheck() {
+        clearInterval(checkInterval);
+        document.getElementById('startBtn').style.display = 'block';
+        document.getElementById('stopBtn').style.display = 'none';
+        document.getElementById('statusBox').className = "status";
+        document.getElementById('statusBox').innerText = "Status: Controle gestopt.";
+    }
+</script>
+
+</body>
+</html>
