@@ -88,15 +88,14 @@
 </div>
 
 <script>
-    const API_KEY = "eyJhbGciOiJSUzI1NiIsImtpZCI6IjdBMEZGQTU5QkZFM0Y1MDk4MzhEMUQyNjAyRjdBMkNBRUU4OUQyQ0EiLCJ0eXAiOiJKV1QifQ.eyJqdGkiOiIzZTcyMTg2Mi05MzUyLTRkNjEtOTVmNC1hMzI3YzljNmVjZDkiLCJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9lbWFpbGFkZHJlc3MiOiJzYW0uZGUua2V1a2VsYWVyZUBob3RtYWlsLmNvbSIsImh0dHA6Ly9zY2hlbWFzLm1pY3Jvc29mdC5jb20vd3MvMjAwOC8wNi9pZGVudGl0eS9jbGFpbXMvcm9sZSI6IlBlcnNvbmFsQWNjZXNzVG9rZW5Sb2xlIiwiZXhwIjoxODE2MjA3MjAwLCJpc3MiOiJodHRwczovL3d3dy5ldXJpc3BvcnRhbC5ldSIsImF1ZCI6IlBlcnNvbmFsQWNjZXNzVG9rZW4ifQ.FhPLCykASjRr9neKgMgdw1oZauRICpjgvYqlLv9GQsIj7CiLsmtKr90SGUXuuZnNE5n834NSpozaieApwUSBl72VRC8KUFB8lj2Vd2j3vg7y_N_R7NYpDVMPiBr6Q16xEp3kGp34mDWMPetvrhtNjm7JuM92rGFyFWq4FAz8EYuofslsGY5VJLjaRubKci_0-b1ZfEAYtQ2iZv-Ek8I8nW8WdusDB2dTSxC2RgzOH6GQ7omBUVYMeMoUyrPk2jPQv-Ta5y5hQRq8wx6iHIXvED2zVSgIH5uI7XeYB1uBh-VpUS_iburDUIzYG4WKwBQa-OcCFQW6uLf432nSnFeURQ";
-    
+    const WORKER_URL = "https://euris-proxy.sam-de-keukelaere.workers.dev/";
     let checkInterval = null;
 
     async function parseInputNaarCoordinaten(input) {
         if (!input) return null;
         input = input.trim();
 
-        // 1. Directe check voor decimale coördinaten (GPS knop of handmatig ingevoerd)
+        // 1. Direct testen op decimale coördinaten (bijv: 50.913940, 3.382690)
         const decimaalMatch = input.match(/(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/);
         if (decimaalMatch) {
             return { lat: parseFloat(decimaalMatch[1]), lon: parseFloat(decimaalMatch[2]) };
@@ -115,30 +114,13 @@
             return { lat: lat, lon: lon };
         }
 
-        // 3. Volledige URL met @lat,lon
+        // 3. Volledige Google Maps URL met @lat,lon
         const urlMatch = input.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || 
                          input.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/) ||
                          input.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
         
         if (urlMatch) {
             return { lat: parseFloat(urlMatch[1]), lon: parseFloat(urlMatch[2]) };
-        }
-
-        // 4. Korte Google Maps link
-        if (input.includes('maps.app.goo.gl') || input.includes('goo.gl')) {
-            try {
-                const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(input)}`;
-                const res = await fetch(proxyUrl);
-                const data = await res.json();
-                
-                const match = data.contents.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || 
-                              data.contents.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
-                if (match) {
-                    return { lat: parseFloat(match[1]), lon: parseFloat(match[2]) };
-                }
-            } catch (e) {
-                console.error("Fout bij uitpakken link:", e);
-            }
         }
 
         return null;
@@ -186,32 +168,6 @@
         }
     }
 
-    // Slimme fetch die automatisch overschakelt op reserve-proxy
-    async function haalEurisDataOp(myLat, myLon) {
-        const eurisUrl = `https://www.eurisportal.eu/api/v1/vessels?latitude=${myLat}&longitude=${myLon}&radius=10000`;
-        
-        // Primaire optie: Thingproxy (zeer stabiel met headers)
-        try {
-            const resp = await fetch(`https://thingproxy.freeboard.io/fetch/${eurisUrl}`, {
-                headers: { 'Authorization': `Bearer ${API_KEY}` }
-            });
-            if (resp.ok) return await resp.json();
-        } catch (e) {
-            console.warn("Primaire proxy mislukt, we proberen de reserve...");
-        }
-
-        // Reserve-optie: Corsproxy
-        const resp2 = await fetch(`https://corsproxy.io/?${encodeURIComponent(eurisUrl)}`, {
-            headers: { 'Authorization': `Bearer ${API_KEY}` }
-        });
-        
-        const contentType = resp2.headers.get("content-type");
-        if (!resp2.ok || (contentType && !contentType.includes("json"))) {
-            throw new Error("API-proxy overbelast. Probeer zo dadelijk opnieuw.");
-        }
-        return await resp2.json();
-    }
-
     async function voerControleUit() {
         const rawInput = document.getElementById('coords').value;
         const statusBox = document.getElementById('statusBox');
@@ -223,7 +179,7 @@
         const parsed = await parseInputNaarCoordinaten(rawInput);
 
         if (!parsed) {
-            alert("Kon de locatie niet herkennen! Controleer de link of coördinaten.");
+            alert("Kon de locatie niet herkennen! Gebruik de GPS-knop of voer coördinaten/lange Maps link in.");
             stopCheck();
             return;
         }
@@ -234,7 +190,13 @@
         statusBox.innerText = `[${tijd}] Bezig met ophalen EuRIS data...\nLocatie: ${myLat.toFixed(4)}, ${myLon.toFixed(4)}`;
 
         try {
-            const data = await haalEurisDataOp(myLat, myLon);
+            const response = await fetch(`${WORKER_URL}?lat=${myLat}&lon=${myLon}`);
+            
+            if (!response.ok) {
+                throw new Error(`Worker status ${response.status}`);
+            }
+
+            const data = await response.json();
             const schepen = data.vessels || data.items || (Array.isArray(data) ? data : []);
 
             let bootGevonden = false;
