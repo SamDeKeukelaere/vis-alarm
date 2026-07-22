@@ -53,6 +53,7 @@
             font-size: 14px;
             line-height: 1.4;
             white-space: pre-line;
+            word-break: break-word;
         }
         .alert-active {
             background-color: #ffe3e3;
@@ -175,20 +176,22 @@
         statusBox.className = "status";
         statusBox.innerText = `[${tijd}] Bezig met ophalen EuRIS data...\nLocatie: ${myLat.toFixed(4)}, ${myLon.toFixed(4)}`;
 
-        // CORS proxy toevoegen voor lokale bestanden
+        // Rechtstreekse EuRIS API url
         const targetUrl = `https://www.eurisportal.eu/api/v1/vessels?latitude=${myLat}&longitude=${myLon}&radius=10000`;
-        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
 
         try {
-            const response = await fetch(proxyUrl, {
+            const response = await fetch(targetUrl, {
+                method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${API_KEY}`,
-                    'Accept': 'application/json'
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
                 }
             });
 
             if (!response.ok) {
-                throw new Error(`API foutmelding: ${response.status}`);
+                const text = await response.text();
+                throw new Error(`HTTP ${response.status}: ${text.substring(0, 100)}`);
             }
 
             const data = await response.json();
@@ -197,18 +200,20 @@
             let bootGevonden = false;
             let gevondenBoodschap = "";
 
-            for (let ship of schepen) {
-                const shipLat = ship.latitude || (ship.position ? ship.position.latitude : null);
-                const shipLon = ship.longitude || (ship.position ? ship.position.longitude : null);
-                const snelheid = ship.speed || 0;
-                const naam = ship.name || "Onbekend Schip";
+            if (Array.isArray(schepen)) {
+                for (let ship of schepen) {
+                    const shipLat = ship.latitude || (ship.position ? ship.position.latitude : null);
+                    const shipLon = ship.longitude || (ship.position ? ship.position.longitude : null);
+                    const snelheid = ship.speed || 0;
+                    const naam = ship.name || "Onbekend Schip";
 
-                if (shipLat && shipLon) {
-                    const afstand = berekenAfstandKm(myLat, myLon, shipLat, shipLon);
+                    if (shipLat && shipLon) {
+                        const afstand = berekenAfstandKm(myLat, myLon, shipLat, shipLon);
 
-                    if (afstand <= 6.0 && snelheid > 0.5) {
-                        bootGevonden = true;
-                        gevondenBoodschap += `🚨 BOOT NABIJ: ${naam}\nAfstand: ${afstand.toFixed(2)} km | Snelheid: ${snelheid} km/h\n\n`;
+                        if (afstand <= 6.0 && snelheid > 0.5) {
+                            bootGevonden = true;
+                            gevondenBoodschap += `🚨 BOOT NABIJ: ${naam}\nAfstand: ${afstand.toFixed(2)} km | Snelheid: ${snelheid} km/h\n\n`;
+                        }
                     }
                 }
             }
@@ -223,7 +228,7 @@
 
         } catch (error) {
             console.error(error);
-            statusBox.innerText = `[${tijd}] Fout bij ophalen data.\n${error.message}`;
+            statusBox.innerText = `[${tijd}] Fout bij ophalen data:\n${error.message}`;
         }
     }
 
