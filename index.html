@@ -68,7 +68,7 @@
     <h2>🎣 Visstek Boot Alarm</h2>
     
     <label for="coords">Coördinaten of Google Maps Link:</label>
-    <input type="text" id="coords" placeholder="Plak link (maps.app.goo.gl/...) of coördinaten">
+    <input type="text" id="coords" placeholder="Plak link of coördinaten...">
 
     <button class="btn-gps" onclick="haalGPSOp()">📍 Gebruik Mijn GPS Locatie</button>
 
@@ -96,26 +96,27 @@
         if (!input) return null;
         input = input.trim();
 
-        // 1. Korte Google Maps link (maps.app.goo.gl of goo.gl)
+        // 1. Korte Google Maps link (maps.app.goo.gl / goo.gl)
         if (input.includes('maps.app.goo.gl') || input.includes('goo.gl')) {
             try {
-                // Via unshorten proxy de echte URL achterhalen
-                const unshortenUrl = `https://corsproxy.io/?${encodeURIComponent(input)}`;
-                const res = await fetch(unshortenUrl);
-                const finalUrl = res.url;
+                // Gebruik unshorten.me via corsproxy om de echte URL op te halen
+                const unshortenApi = `https://corsproxy.io/?${encodeURIComponent('https://unshorten.me/json/' + input)}`;
+                const res = await fetch(unshortenApi);
+                const data = await res.json();
                 
-                // Zoek naar coördinaten in de uitgepakte URL (@lat,lon of ?q=lat,lon)
-                const match = finalUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || finalUrl.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
-                if (match) {
-                    return { lat: parseFloat(match[1]), lon: parseFloat(match[2]) };
+                if (data && data.resolved_url) {
+                    input = data.resolved_url;
                 }
             } catch (e) {
-                console.error("Fout bij uitpakken korten link", e);
+                console.error("Fout bij uitpakken van de link:", e);
             }
         }
 
-        // 2. Gewone URL met @lat,lon
-        const urlMatch = input.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+        // 2. Zoek naar @lat,lon of ?q=lat,lon of /place/lat,lon in de (uitgepakte) URL
+        const urlMatch = input.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || 
+                         input.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/) ||
+                         input.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+        
         if (urlMatch) {
             return { lat: parseFloat(urlMatch[1]), lon: parseFloat(urlMatch[2]) };
         }
@@ -126,7 +127,7 @@
             return { lat: parseFloat(decimaalMatch[1]), lon: parseFloat(decimaalMatch[2]) };
         }
 
-        // 4. Graden/Minuten/Seconden (DMS)
+        // 4. Graden/Minuten/Seconden (DMS - bijv: 50°54'48.5"N 3°16'52.8"E)
         const dmsRegex = /(\d+)°(\d+)'([\d.]+)"?([NS])[\s,]+(\d+)°(\d+)'([\d.]+)"?([EW])/i;
         const dmsMatch = input.match(dmsRegex);
         
@@ -191,7 +192,7 @@
         const tijd = new Date().toLocaleTimeString();
 
         statusBox.className = "status";
-        statusBox.innerText = `[${tijd}] Invoer verwerken...`;
+        statusBox.innerText = `[${tijd}] Link uitpakken & verwerken...`;
 
         const parsed = await parseInputNaarCoordinaten(rawInput);
 
