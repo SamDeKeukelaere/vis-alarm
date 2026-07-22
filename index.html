@@ -67,8 +67,8 @@
 <div class="card">
     <h2>🎣 Visstek Boot Alarm</h2>
     
-    <label for="coords">Google Maps Coördinaten:</label>
-    <input type="text" id="coords" placeholder="Plak hier bijv: 50°54'48.5&quot;N 3°16'52.8&quot;E">
+    <label for="coords">Coördinaten of Google Maps Link:</label>
+    <input type="text" id="coords" placeholder="Plak link (maps.app.goo.gl/...) of coördinaten">
 
     <button class="btn-gps" onclick="haalGPSOp()">📍 Gebruik Mijn GPS Locatie</button>
 
@@ -92,14 +92,41 @@
     
     let checkInterval = null;
 
-    function parseCoordinaten(input) {
+    async function parseInputNaarCoordinaten(input) {
         if (!input) return null;
-        
+        input = input.trim();
+
+        // 1. Korte Google Maps link (maps.app.goo.gl of goo.gl)
+        if (input.includes('maps.app.goo.gl') || input.includes('goo.gl')) {
+            try {
+                // Via unshorten proxy de echte URL achterhalen
+                const unshortenUrl = `https://corsproxy.io/?${encodeURIComponent(input)}`;
+                const res = await fetch(unshortenUrl);
+                const finalUrl = res.url;
+                
+                // Zoek naar coördinaten in de uitgepakte URL (@lat,lon of ?q=lat,lon)
+                const match = finalUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || finalUrl.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
+                if (match) {
+                    return { lat: parseFloat(match[1]), lon: parseFloat(match[2]) };
+                }
+            } catch (e) {
+                console.error("Fout bij uitpakken korten link", e);
+            }
+        }
+
+        // 2. Gewone URL met @lat,lon
+        const urlMatch = input.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+        if (urlMatch) {
+            return { lat: parseFloat(urlMatch[1]), lon: parseFloat(urlMatch[2]) };
+        }
+
+        // 3. Decimale coördinaten (bijv: 50.9135, 3.2813)
         const decimaalMatch = input.match(/(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/);
         if (decimaalMatch) {
             return { lat: parseFloat(decimaalMatch[1]), lon: parseFloat(decimaalMatch[2]) };
         }
 
+        // 4. Graden/Minuten/Seconden (DMS)
         const dmsRegex = /(\d+)°(\d+)'([\d.]+)"?([NS])[\s,]+(\d+)°(\d+)'([\d.]+)"?([EW])/i;
         const dmsMatch = input.match(dmsRegex);
         
@@ -160,23 +187,25 @@
 
     async function voerControleUit() {
         const rawInput = document.getElementById('coords').value;
-        const parsed = parseCoordinaten(rawInput);
         const statusBox = document.getElementById('statusBox');
+        const tijd = new Date().toLocaleTimeString();
+
+        statusBox.className = "status";
+        statusBox.innerText = `[${tijd}] Invoer verwerken...`;
+
+        const parsed = await parseInputNaarCoordinaten(rawInput);
 
         if (!parsed) {
-            alert("Ongeldige coördinaten!");
+            alert("Kon de locatie niet herkennen! Controleer de link of coördinaten.");
             stopCheck();
             return;
         }
 
         const myLat = parsed.lat;
         const myLon = parsed.lon;
-        const tijd = new Date().toLocaleTimeString();
 
-        statusBox.className = "status";
         statusBox.innerText = `[${tijd}] Bezig met ophalen EuRIS data...\nLocatie: ${myLat.toFixed(4)}, ${myLon.toFixed(4)}`;
 
-        // Gebruik corsproxy.io voor veilige header-doorvoer
         const targetUrl = `https://corsproxy.io/?${encodeURIComponent(`https://www.eurisportal.eu/api/v1/vessels?latitude=${myLat}&longitude=${myLon}&radius=10000`)}`;
 
         try {
@@ -233,7 +262,7 @@
     function startCheck() {
         const rawInput = document.getElementById('coords').value;
         if (!rawInput) {
-            alert("Plak eerst coördinaten!");
+            alert("Plak eerst coördinaten of een link!");
             return;
         }
 
