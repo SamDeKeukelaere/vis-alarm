@@ -176,28 +176,24 @@
         statusBox.className = "status";
         statusBox.innerText = `[${tijd}] Bezig met ophalen EuRIS data...\nLocatie: ${myLat.toFixed(4)}, ${myLon.toFixed(4)}`;
 
-        // Gebruik AllOrigins om de CORS-blokkering te omzeilen
-        const eurisUrl = `https://www.eurisportal.eu/api/v1/vessels?latitude=${myLat}&longitude=${myLon}&radius=10000`;
-        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(eurisUrl)}`;
+        // Gebruik corsproxy.io voor veilige header-doorvoer
+        const targetUrl = `https://corsproxy.io/?${encodeURIComponent(`https://www.eurisportal.eu/api/v1/vessels?latitude=${myLat}&longitude=${myLon}&radius=10000`)}`;
 
         try {
-            const response = await fetch(proxyUrl);
+            const response = await fetch(targetUrl, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${API_KEY}`,
+                    'Accept': 'application/json'
+                }
+            });
 
             if (!response.ok) {
-                throw new Error(`HTTP Fout: ${response.status}`);
+                throw new Error(`HTTP ${response.status}`);
             }
 
-            const proxyData = await response.json();
-            
-            // AllOrigins pakt het antwoord in 'contents' in
-            let data;
-            try {
-                data = JSON.parse(proxyData.contents);
-            } catch(e) {
-                data = proxyData.contents;
-            }
-
-            const schepen = (data && (data.vessels || data.items || (Array.isArray(data) ? data : []))) || [];
+            const data = await response.json();
+            const schepen = data.vessels || data.items || (Array.isArray(data) ? data : []);
 
             let bootGevonden = false;
             let gevondenBoodschap = "";
