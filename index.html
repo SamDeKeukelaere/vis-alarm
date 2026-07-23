@@ -73,7 +73,7 @@
     <button class="btn-gps" onclick="haalGPSOp()">📍 Gebruik Mijn GPS Locatie</button>
 
     <label for="radiusInput">Detectiestraal (in km):</label>
-    <input type="number" id="radiusInput" value="10" min="1" max="50" step="0.5">
+    <input type="number" id="radiusInput" value="15" min="1" max="50" step="0.5">
 
     <hr style="margin-top:20px; border: 0.5px solid #d9e2ec;">
 
@@ -173,7 +173,7 @@
 
     async function voerControleUit() {
         const rawInput = document.getElementById('coords').value;
-        const radiusKm = parseFloat(document.getElementById('radiusInput').value) || 10;
+        const radiusKm = parseFloat(document.getElementById('radiusInput').value) || 15;
         const statusBox = document.getElementById('statusBox');
         const tijd = new Date().toLocaleTimeString();
 
@@ -195,8 +195,6 @@
 
         try {
             const response = await fetch(`${WORKER_URL}?lat=${myLat}&lon=${myLon}&radius=${radiusKm}`);
-            
-            // Controleer of de worker een geldige JSON stuurt
             const data = await response.json();
             
             let schepen = [];
@@ -211,11 +209,12 @@
             let aantalGevonden = 0;
 
             for (let ship of schepen) {
+                // Zoek alle mogelijke plekken waar EuRIS de lat/lon kan hebben verstopt
                 let shipLat = ship.latitude ?? ship.lat ?? (ship.position && ship.position.latitude) ?? (ship.geometry && ship.geometry.coordinates && ship.geometry.coordinates[1]);
                 let shipLon = ship.longitude ?? ship.lon ?? (ship.position && ship.position.longitude) ?? (ship.geometry && ship.geometry.coordinates && ship.geometry.coordinates[0]);
                 
                 let snelheid = ship.speed ?? ship.sog ?? ship.speedOverGround ?? 0;
-                let naam = ship.name || ship.vesselName || ship.shipName || "Schip";
+                let naam = ship.name || ship.vesselName || ship.shipName || `Schip (${ship.mmsi || ship.eni || 'Varend'})`;
 
                 if (shipLat !== undefined && shipLon !== undefined) {
                     const afstand = berekenAfstandKm(myLat, myLon, parseFloat(shipLat), parseFloat(shipLon));
@@ -233,7 +232,7 @@
                 statusBox.innerText = `[${tijd}] ALARM! (${aantalGevonden} schip/schepen nabij):\n\n${gevondenBoodschap}`;
                 speelAlarmGeluid();
             } else {
-                statusBox.innerText = `[${tijd}] Laatste check OK.\nGeen schepen gedetecteerd binnen ${radiusKm} km.`;
+                statusBox.innerText = `[${tijd}] Laatste check OK.\nGeen schepen binnen ${radiusKm} km.\n(Totaal door EuRIS ontvangen items: ${schepen.length})`;
             }
 
         } catch (error) {
