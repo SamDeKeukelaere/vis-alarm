@@ -1,177 +1,4 @@
-<!DOCTYPE html>
-<html lang="nl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Visstek Boot Alarm</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background-color: #f0f4f8;
-            color: #102a43;
-            padding: 20px;
-            margin: 0;
-        }
-        .card {
-            background: white;
-            padding: 20px;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            max-width: 400px;
-            margin: 0 auto 20px auto;
-        }
-        h2, h3 { margin-top: 0; color: #0b69a3; }
-        label { font-weight: bold; display: block; margin-top: 10px; }
-        input[type="text"], input[type="number"] {
-            width: 100%;
-            padding: 12px;
-            margin-top: 5px;
-            border: 1px solid #bcccdc;
-            border-radius: 6px;
-            box-sizing: border-box;
-            font-size: 14px;
-        }
-        button {
-            width: 100%;
-            padding: 12px;
-            margin-top: 15px;
-            border: none;
-            border-radius: 6px;
-            font-weight: bold;
-            font-size: 16px;
-            cursor: pointer;
-        }
-        .btn-gps { background-color: #486581; color: white; }
-        .btn-start { background-color: #27ab83; color: white; }
-        .btn-stop { background-color: #e12d39; color: white; display: none; }
-        .btn-test { background-color: #d9e2ec; color: #102a43; }
-        .status {
-            padding: 12px;
-            border-radius: 6px;
-            background: #f0f4f8;
-            margin-top: 15px;
-            font-size: 14px;
-            line-height: 1.4;
-            white-space: pre-line;
-            word-break: break-word;
-        }
-        .alert-active {
-            background-color: #ffe3e3;
-            color: #b71919;
-            border: 1px solid #e12d39;
-        }
-    </style>
-</head>
-<body>
-
-<div class="card">
-    <h2>🎣 Visstek Boot Alarm</h2>
-    
-    <label for="coords">Coördinaten of Google Maps Link:</label>
-    <input type="text" id="coords" placeholder="Plak link of coördinaten...">
-
-    <button class="btn-gps" onclick="haalGPSOp()">📍 Gebruik Mijn GPS Locatie</button>
-
-    <label for="radiusInput">Detectiestraal (in km):</label>
-    <input type="number" id="radiusInput" value="6" min="1" max="50" step="0.5">
-
-    <hr style="margin-top:20px; border: 0.5px solid #d9e2ec;">
-
-    <button id="startBtn" class="btn-start" onclick="startCheck()">▶ START CONTROLE (Elke 5 min)</button>
-    <button id="stopBtn" class="btn-stop" onclick="stopCheck()">⏹ STOP CONTROLE</button>
-
-    <div class="status" id="statusBox">
-        <strong>Status:</strong> Wacht op start...
-    </div>
-</div>
-
-<div class="card">
-    <h3>🔊 Geluid Testen</h3>
-    <button class="btn-test" onclick="speelAlarmGeluid()">🔔 Test Alarm Geluid</button>
-</div>
-
-<script>
-    const WORKER_URL = "https://euris-proxy.sam-de-keukelaere.workers.dev/";
-    let checkInterval = null;
-
-    async function parseInputNaarCoordinaten(input) {
-        if (!input) return null;
-        input = input.trim();
-
-        // 1. Direct testen op decimale coördinaten (bijv: 50.913940, 3.382690)
-        const decimaalMatch = input.match(/(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/);
-        if (decimaalMatch) {
-            return { lat: parseFloat(decimaalMatch[1]), lon: parseFloat(decimaalMatch[2]) };
-        }
-
-        // 2. Graden/Minuten/Seconden (DMS)
-        const dmsRegex = /(\d+)°(\d+)'([\d.]+)"?([NS])[\s,]+(\d+)°(\d+)'([\d.]+)"?([EW])/i;
-        const dmsMatch = input.match(dmsRegex);
-        if (dmsMatch) {
-            let lat = parseInt(dmsMatch[1]) + parseInt(dmsMatch[2])/60 + parseFloat(dmsMatch[3])/3600;
-            if (dmsMatch[4].toUpperCase() === 'S') lat = -lat;
-
-            let lon = parseInt(dmsMatch[5]) + parseInt(dmsMatch[6])/60 + parseFloat(dmsMatch[7])/3600;
-            if (dmsMatch[8].toUpperCase() === 'W') lon = -lon;
-
-            return { lat: lat, lon: lon };
-        }
-
-        // 3. Volledige Google Maps URL met @lat,lon
-        const urlMatch = input.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || 
-                         input.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/) ||
-                         input.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
-        
-        if (urlMatch) {
-            return { lat: parseFloat(urlMatch[1]), lon: parseFloat(urlMatch[2]) };
-        }
-
-        return null;
-    }
-
-    function haalGPSOp() {
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(position => {
-                const lat = position.coords.latitude.toFixed(6);
-                const lon = position.coords.longitude.toFixed(6);
-                document.getElementById('coords').value = `${lat}, ${lon}`;
-                document.getElementById('statusBox').innerText = "Status: GPS coördinaten ingevuld!";
-            }, error => {
-                alert("Kon GPS niet ophalen.");
-            });
-        } else {
-            alert("GPS niet ondersteund.");
-        }
-    }
-
-    function berekenAfstandKm(lat1, lon1, lat2, lon2) {
-        const R = 6371;
-        const dLat = (lat2 - lat1) * Math.PI / 180;
-        const dLon = (lon2 - lon1) * Math.PI / 180;
-        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                  Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-                  Math.sin(dLon/2) * Math.sin(dLon/2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-        return R * c;
-    }
-
-    function speelAlarmGeluid() {
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        for (let i = 0; i < 8; i++) {
-            let osc = audioCtx.createOscillator();
-            let gain = audioCtx.createGain();
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(900, audioCtx.currentTime + (i * 0.3));
-            gain.gain.setValueAtTime(1, audioCtx.currentTime + (i * 0.3));
-            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + (i * 0.3) + 0.25);
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            osc.start(audioCtx.currentTime + (i * 0.3));
-            osc.stop(audioCtx.currentTime + (i * 0.3) + 0.25);
-        }
-    }
-
-    async function voerControleUit() {
+async function voerControleUit() {
         const rawInput = document.getElementById('coords').value;
         const radiusKm = parseFloat(document.getElementById('radiusInput').value) || 6;
         const statusBox = document.getElementById('statusBox');
@@ -191,46 +18,52 @@
         const myLat = parsed.lat;
         const myLon = parsed.lon;
 
-        statusBox.innerText = `[${tijd}] Bezig met ophalen EuRIS data...\nLocatie: ${myLat.toFixed(4)}, ${myLon.toFixed(4)}\nStraal: ${radiusKm} km`;
+        statusBox.innerText = `[${tijd}] Ophalen data...\nLocatie: ${myLat.toFixed(4)}, ${myLon.toFixed(4)}\nStraal: ${radiusKm} km`;
 
         try {
             const response = await fetch(`${WORKER_URL}?lat=${myLat}&lon=${myLon}&radius=${radiusKm}`);
-            
             const data = await response.json();
             
-            // Flexibele detectie van de schepenlijst in JSON
+            console.log("Ontvangen data van EuRIS:", data);
+
+            // Bepaal de lijst met schepen uit de respons
             let schepen = [];
             if (Array.isArray(data)) schepen = data;
             else if (Array.isArray(data.vessels)) schepen = data.vessels;
             else if (Array.isArray(data.items)) schepen = data.items;
             else if (Array.isArray(data.positions)) schepen = data.positions;
+            else if (Array.isArray(data.data)) schepen = data.data;
 
             let bootGevonden = false;
             let gevondenBoodschap = "";
+            let aantalGevonden = 0;
 
             for (let ship of schepen) {
-                let shipLat = ship.latitude || (ship.position && ship.position.latitude) || (ship.geometry && ship.geometry.coordinates && ship.geometry.coordinates[1]);
-                let shipLon = ship.longitude || (ship.position && ship.position.longitude) || (ship.geometry && ship.geometry.coordinates && ship.geometry.coordinates[0]);
+                // Haal de coördinaten op uit verschillende mogelijke EuRIS formats
+                let shipLat = ship.latitude ?? ship.lat ?? (ship.position && ship.position.latitude) ?? (ship.geometry && ship.geometry.coordinates && ship.geometry.coordinates[1]);
+                let shipLon = ship.longitude ?? ship.lon ?? (ship.position && ship.position.longitude) ?? (ship.geometry && ship.geometry.coordinates && ship.geometry.coordinates[0]);
                 
-                let snelheid = ship.speed !== undefined ? ship.speed : (ship.sog !== undefined ? ship.sog : (ship.speedOverGround || 0));
-                let naam = ship.name || ship.vesselName || "Onbekend Schip";
+                let snelheid = ship.speed ?? ship.sog ?? ship.speedOverGround ?? 0;
+                let naam = ship.name || ship.vesselName || ship.shipName || `Schip (${ship.mmsi || ship.eni || 'Onbekend'})`;
 
-                if (shipLat && shipLon) {
-                    const afstand = berekenAfstandKm(myLat, myLon, shipLat, shipLon);
+                if (shipLat !== undefined && shipLon !== undefined) {
+                    const afstand = berekenAfstandKm(myLat, myLon, parseFloat(shipLat), parseFloat(shipLon));
 
-                    if (afstand <= radiusKm && snelheid > 0.2) {
+                    // Als het schip binnen de straal valt (we negeren de snelheidsfilter tijdelijk om zeker te zijn dat alles gedetecteerd wordt)
+                    if (afstand <= radiusKm) {
                         bootGevonden = true;
-                        gevondenBoodschap += `🚨 BOOT NABIJ: ${naam}\nAfstand: ${afstand.toFixed(2)} km | Snelheid: ${snelheid} km/h\n\n`;
+                        aantalGevonden++;
+                        gevondenBoodschap += `🚨 ${naam}\nAfstand: ${afstand.toFixed(2)} km | Snelheid: ${snelheid} km/h\n\n`;
                     }
                 }
             }
 
             if (bootGevonden) {
                 statusBox.className = "status alert-active";
-                statusBox.innerText = `[${tijd}] ALARM!\n\n${gevondenBoodschap}`;
+                statusBox.innerText = `[${tijd}] ALARM! (${aantalGevonden} schip/schepen nabij):\n\n${gevondenBoodschap}`;
                 speelAlarmGeluid();
             } else {
-                statusBox.innerText = `[${tijd}] Laatste check OK.\nGeen varende schepen binnen ${radiusKm} km.`;
+                statusBox.innerText = `[${tijd}] Laatste check OK.\nGeen schepen gedetecteerd binnen ${radiusKm} km.`;
             }
 
         } catch (error) {
@@ -238,29 +71,3 @@
             statusBox.innerText = `[${tijd}] Fout bij ophalen data:\n${error.message}`;
         }
     }
-
-    function startCheck() {
-        const rawInput = document.getElementById('coords').value;
-        if (!rawInput) {
-            alert("Plak eerst coördinaten of een link!");
-            return;
-        }
-
-        voerControleUit();
-        checkInterval = setInterval(voerControleUit, 300000);
-
-        document.getElementById('startBtn').style.display = 'none';
-        document.getElementById('stopBtn').style.display = 'block';
-    }
-
-    function stopCheck() {
-        clearInterval(checkInterval);
-        document.getElementById('startBtn').style.display = 'block';
-        document.getElementById('stopBtn').style.display = 'none';
-        document.getElementById('statusBox').className = "status";
-        document.getElementById('statusBox').innerText = "Status: Controle gestopt.";
-    }
-</script>
-
-</body>
-</html>
