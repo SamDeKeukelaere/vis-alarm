@@ -196,10 +196,6 @@
         try {
             const response = await fetch(`${WORKER_URL}?lat=${myLat}&lon=${myLon}&radius=${radiusKm}`);
             
-            if (!response.ok) {
-                throw new Error(`Worker status ${response.status}`);
-            }
-
             const data = await response.json();
             
             // Flexibele detectie van de schepenlijst in JSON
@@ -211,27 +207,20 @@
 
             let bootGevonden = false;
             let gevondenBoodschap = "";
-            let totaalInGebied = 0;
 
             for (let ship of schepen) {
-                // Posities uit verschillende mogelijke EuRIS formats halen
                 let shipLat = ship.latitude || (ship.position && ship.position.latitude) || (ship.geometry && ship.geometry.coordinates && ship.geometry.coordinates[1]);
                 let shipLon = ship.longitude || (ship.position && ship.position.longitude) || (ship.geometry && ship.geometry.coordinates && ship.geometry.coordinates[0]);
                 
-                // Snelheid uit verschillende formaten halen (speed / sog / speedOverGround)
                 let snelheid = ship.speed !== undefined ? ship.speed : (ship.sog !== undefined ? ship.sog : (ship.speedOverGround || 0));
                 let naam = ship.name || ship.vesselName || "Onbekend Schip";
 
                 if (shipLat && shipLon) {
                     const afstand = berekenAfstandKm(myLat, myLon, shipLat, shipLon);
 
-                    if (afstand <= radiusKm) {
-                        totaalInGebied++;
-                        // We controleren op beweging (> 0.2 km/h of knopen)
-                        if (snelheid > 0.2) {
-                            bootGevonden = true;
-                            gevondenBoodschap += `🚨 BOOT NABIJ: ${naam}\nAfstand: ${afstand.toFixed(2)} km | Snelheid: ${snelheid} km/h\n\n`;
-                        }
+                    if (afstand <= radiusKm && snelheid > 0.2) {
+                        bootGevonden = true;
+                        gevondenBoodschap += `🚨 BOOT NABIJ: ${naam}\nAfstand: ${afstand.toFixed(2)} km | Snelheid: ${snelheid} km/h\n\n`;
                     }
                 }
             }
@@ -241,7 +230,7 @@
                 statusBox.innerText = `[${tijd}] ALARM!\n\n${gevondenBoodschap}`;
                 speelAlarmGeluid();
             } else {
-                statusBox.innerText = `[${tijd}] Check OK.\nGeen varende schepen binnen ${radiusKm} km.\n(Gevonden schepen in buurt: ${totaalInGebied})`;
+                statusBox.innerText = `[${tijd}] Laatste check OK.\nGeen varende schepen binnen ${radiusKm} km.`;
             }
 
         } catch (error) {
